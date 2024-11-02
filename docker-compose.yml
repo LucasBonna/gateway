@@ -1,0 +1,37 @@
+services:
+  gateway-service:
+    container_name: gateway-service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./settings.xml:/root/.m2/settings.xml
+    depends_on:
+      - db_gateway
+    networks:
+      - dokploy-network
+
+  db_gateway:
+    container_name: db_gateway
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: cfgateway
+      POSTGRES_USER: docker
+      POSTGRES_PASSWORD: docker
+    volumes:
+      - "$HOME/cf-data/postgres/gateway:/var/lib/postgresql"
+    ports:
+      - "5432:5432"
+    networks:
+      - dokploy-network
+
+volumes:
+  cf-data:
+
+networks:
+  dokploy-network:
+    external: true

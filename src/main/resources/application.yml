@@ -1,0 +1,29 @@
+spring:
+  config:
+    import: optional:configserver:http://config-server:8888
+  application:
+    name: gateway-service
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - url: /cfstorage/v3/api-docs
+        name: Storage API
+      - url: /cfemission/v3/api-docs
+        name: Emission API
+      - url: /v3/api-docs
+        name: Admin API
+  api-docs:
+    components:
+      security-schemes:
+        bearer-token:
+          type: http
+          scheme: bearer
+          bearer-format: jwt
+    security:
+      - bearer-token: []
+eureka:
+  client:
+    service-url:
+      defaultZone: http://discovery-service:8761/eureka
