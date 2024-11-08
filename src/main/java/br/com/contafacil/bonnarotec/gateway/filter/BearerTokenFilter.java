@@ -9,7 +9,9 @@ import br.com.contafacil.shared.bonnarotec.toolslib.domain.user.UserEntity;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,7 @@ import reactor.core.publisher.Mono;
 import java.util.Optional;
 
 @Component
+@Order(1)
 public class BearerTokenFilter implements WebFilter {
 
     private ClientRepository clientRepository;
@@ -43,6 +46,10 @@ public class BearerTokenFilter implements WebFilter {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
 
+        if (request.getMethod() == HttpMethod.OPTIONS) {
+            return chain.filter(exchange);
+        }
+
         if (isExcludedPath(path)) {
             return chain.filter(exchange);
         }
@@ -59,6 +66,7 @@ public class BearerTokenFilter implements WebFilter {
 
         Optional<UserEntity> user = this.userRepository.findByApiKey(token);
         if (user.isEmpty()) {
+            System.out.println("User not found");
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
         }
@@ -103,6 +111,7 @@ public class BearerTokenFilter implements WebFilter {
 
     private boolean isExcludedPath(String path) {
         return pathMatcher.match("/", path) ||
+                pathMatcher.match("/auth/login", path) ||
                 pathMatcher.match("/docs", path) ||
                 pathMatcher.match("/swagger", path) ||
                 pathMatcher.match("/swagger/index.html", path) ||
@@ -121,6 +130,6 @@ public class BearerTokenFilter implements WebFilter {
 
     // Converte ClientEntity para ClientDTO
     private ClientDTO toClientDTO(ClientEntity client) {
-        return new ClientDTO(client.getId(), client.getName());
+        return new ClientDTO(client.getId(), client.getName(), client.getRole());
     }
 }
