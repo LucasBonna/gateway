@@ -1,135 +1,117 @@
 package br.com.contafacil.bonnarotec.gateway.filter;
 
-import br.com.contafacil.bonnarotec.gateway.domain.client.ClientRepository;
-import br.com.contafacil.bonnarotec.gateway.domain.user.UserRepository;
+import br.com.contafacil.bonnarotec.gateway.client.RegistryServiceClient;
+import br.com.contafacil.bonnarotec.gateway.exception.InvalidUserException;
+import br.com.contafacil.shared.bonnarotec.toolslib.domain.client.ClientDTO;
 import br.com.contafacil.shared.bonnarotec.toolslib.domain.client.ClientEntity;
 import br.com.contafacil.shared.bonnarotec.toolslib.domain.user.UserDTO;
-import br.com.contafacil.shared.bonnarotec.toolslib.domain.client.ClientDTO;
 import br.com.contafacil.shared.bonnarotec.toolslib.domain.user.UserEntity;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.annotation.Order;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
-import org.springframework.util.AntPathMatcher;
-import org.springframework.util.PathMatcher;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
-import java.util.Optional;
-
+@Slf4j
 @Component
-@Order(1)
+@RequiredArgsConstructor
 public class BearerTokenFilter implements WebFilter {
 
-    private ClientRepository clientRepository;
-    private UserRepository userRepository;
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper;
+    private final RegistryServiceClient registryServiceClient;
 
-    private final PathMatcher pathMatcher = new AntPathMatcher();
-
-    public BearerTokenFilter(ClientRepository clientRepository, UserRepository userRepository, ObjectMapper objectMapper) {
-        this.clientRepository = clientRepository;
-        this.userRepository = userRepository;
-        this.objectMapper = objectMapper;
-    }
-
-    @SuppressWarnings("null")
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        ServerHttpRequest request = exchange.getRequest();
-        String path = request.getURI().getPath();
-
-        if (request.getMethod() == HttpMethod.OPTIONS) {
+        String path = exchange.getRequest().getPath().value();
+        
+        if (isPublicPath(path)) {
             return chain.filter(exchange);
         }
 
-        if (isExcludedPath(path)) {
-            return chain.filter(exchange);
+        String authorization = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or invalid Authorization header"));
         }
 
-        String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
-        }
+        String apiKey = authorization.substring(7);
+        
+        return Mono.fromCallable(() -> registryServiceClient.findUserByApiKey(apiKey))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(user -> {
+                    if (user == null) {
+                        return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid API key"));
+                    }
+                    
+                    return Mono.fromCallable(() -> registryServiceClient.findClientById(user.getClient().getId()))
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .flatMap(client -> {
+                                if (client == null) {
+                                    return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Client not found"));
+                                }
+                                return addHeadersToRequest(exchange, user, client)
+                                        .then(chain.filter(exchange));
+                            });
+                })
+                .onErrorResume(e -> Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, e.getMessage())));
+    }
 
-        String token = authHeader.substring(7);
+    private boolean isPublicPath(String path) {
+        return path.startsWith("/auth") || 
+               path.equals("/") || 
+               path.equals("/actuator/health") ||
+               path.startsWith("/swagger") ||
+               path.startsWith("/webjars") ||
+               path.startsWith("/v3/api-docs") ||
+               path.equals("/cfemission/v3/api-docs") ||
+               path.equals("/cfstorage/v3/api-docs") ||
+               path.equals("/cfregistry/v3/api-docs");
+    }
 
-        System.out.println("Token: " + token);
-
-        Optional<UserEntity> user = this.userRepository.findByApiKey(token);
-        if (user.isEmpty()) {
-            System.out.println("User not found");
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
-        }
-
-        System.out.println("User passou");
-
-        Optional<ClientEntity> client = this.clientRepository.findByUsersContaining(user.get());
-        if (client.isEmpty()) {
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
-        }
-
-        System.out.println("Client passou");
-
+    private Mono<Void> addHeadersToRequest(ServerWebExchange exchange, UserEntity user, ClientEntity client) {
         try {
-            UserDTO userDTO = toUserDTO(user.get());
-            String userJson = this.objectMapper.writeValueAsString(userDTO);
+            UserDTO userDTO = toUserDTO(user);
+            String userJson = objectMapper.writeValueAsString(userDTO);
+            
+            ClientDTO clientDTO = toClientDTO(client);
+            String clientJson = objectMapper.writeValueAsString(clientDTO);
 
-            ClientDTO clientDTO = toClientDTO(client.get());
-            String clientJson = this.objectMapper.writeValueAsString(clientDTO);
-
-            System.out.println("userJson: " + userJson);
-
-            System.out.println("clientJson: " + clientJson);
-
-            ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
+            ServerHttpRequest request = exchange.getRequest().mutate()
                     .header("X-User", userJson)
                     .header("X-Client", clientJson)
                     .build();
 
-            ServerWebExchange mutatedExchange = exchange.mutate()
-                    .request(mutatedRequest)
-                    .build();
-
-            return chain.filter(mutatedExchange);
+            return Mono.just(exchange.mutate().request(request).build())
+                    .then();
         } catch (JsonProcessingException e) {
-            System.out.println("Erro ao processar JSON" + e.getMessage());
-            exchange.getResponse().setStatusCode(HttpStatus.INTERNAL_SERVER_ERROR);
-            return exchange.getResponse().setComplete();
+            return Mono.error(new InvalidUserException("Error processing user data"));
         }
     }
 
-    private boolean isExcludedPath(String path) {
-        return pathMatcher.match("/", path) ||
-                pathMatcher.match("/auth/login", path) ||
-                pathMatcher.match("/docs", path) ||
-                pathMatcher.match("/swagger", path) ||
-                pathMatcher.match("/swagger/index.html", path) ||
-                pathMatcher.match("/swagger-ui/**", path) ||
-                pathMatcher.match("/swagger-ui.html", path) ||
-                pathMatcher.match("/webjars/**", path) ||
-                pathMatcher.match("/v3/api-docs/**", path) ||
-                pathMatcher.match("/cfemission/v3/api-docs", path) ||
-                pathMatcher.match("/cfstorage/v3/api-docs", path) ||
-                pathMatcher.match("/v3/api-docs", path);
-    }
-
     private UserDTO toUserDTO(UserEntity user) {
-        return new UserDTO(user.getId(), user.getUsername(), user.getPassword(), user.getApiKey(), user.getClient());
+        return new UserDTO(
+            user.getId(),
+            user.getUsername(),
+            user.getPassword(),
+            user.getApiKey(),
+            user.getRole(),
+            user.getClient()
+        );
     }
 
-    // Converte ClientEntity para ClientDTO
     private ClientDTO toClientDTO(ClientEntity client) {
-        return new ClientDTO(client.getId(), client.getName(), client.getRole());
+        return new ClientDTO(
+            client.getId(),
+            client.getName(),
+            client.getRole()
+        );
     }
 }

@@ -1,33 +1,30 @@
 package br.com.contafacil.bonnarotec.gateway.service.implementation;
 
-import br.com.contafacil.bonnarotec.gateway.domain.user.UserRepository;
+import br.com.contafacil.bonnarotec.gateway.client.RegistryServiceClient;
 import br.com.contafacil.bonnarotec.gateway.exception.WrongCredentialsException;
 import br.com.contafacil.bonnarotec.gateway.service.AuthService;
 import br.com.contafacil.shared.bonnarotec.toolslib.domain.user.UserEntity;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-
-    public AuthServiceImpl(UserRepository userRepository) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = new BCryptPasswordEncoder();
-    }
+    private final RegistryServiceClient registryServiceClient;
+    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Override
-    public UserEntity authenticate(String username, String password) {
-        return userRepository.findByUsername(username)
-                .filter(user -> passwordEncoder.matches(password, user.getPassword()))
-                .map(user -> {
-                    user.setPassword(null);
-                    return user;
-                })
-                .orElseThrow(() -> new WrongCredentialsException("Credenciais inválidas"));
+    public Mono<UserEntity> authenticate(String username, String password) {
+        UserEntity user = registryServiceClient.findUserByUsername(username);
+        
+        if (user == null || !passwordEncoder.matches(password, user.getPassword())) {
+            return Mono.error(new WrongCredentialsException("Invalid username or password"));
+        }
+        
+        return Mono.just(user);
     }
-
 }
