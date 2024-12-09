@@ -34,8 +34,11 @@ public class BearerTokenFilter implements WebFilter {
         String path = exchange.getRequest().getPath().value();
         
         if (isPublicPath(path)) {
+            System.out.println("Public path: " + path);
             return chain.filter(exchange);
         }
+
+        System.out.println("Protected path: " + path);
 
         String authorization = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authorization == null || !authorization.startsWith("Bearer ")) {
@@ -71,6 +74,7 @@ public class BearerTokenFilter implements WebFilter {
                path.startsWith("/swagger") ||
                path.startsWith("/webjars") ||
                path.startsWith("/v3/api-docs") ||
+               path.contains("/cfregistry/api/v1/users/auth/login") ||
                path.equals("/cfemission/v3/api-docs") ||
                path.equals("/cfstorage/v3/api-docs") ||
                path.equals("/cfregistry/v3/api-docs");

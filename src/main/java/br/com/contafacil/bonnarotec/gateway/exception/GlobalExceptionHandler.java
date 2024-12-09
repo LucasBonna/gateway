@@ -14,12 +14,6 @@ public class GlobalExceptionHandler {
         return Mono.just(new ErrorResponse(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
     }
 
-    @ResponseStatus(HttpStatus.CONFLICT)
-    @ExceptionHandler(DuplicateUsernameException.class)
-    public Mono<ErrorResponse> handleDuplicateUsername(DuplicateUsernameException ex) {
-        return Mono.just(new ErrorResponse(HttpStatus.CONFLICT.value(), ex.getMessage()));
-    }
-
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler(InvalidUserException.class)
     public Mono<ErrorResponse> handleInvalidUser(InvalidUserException ex) {
@@ -29,12 +23,6 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     @ExceptionHandler(UnauthorizedException.class)
     public Mono<ErrorResponse> handleUnauthorized(UnauthorizedException ex) {
-        return Mono.just(new ErrorResponse(HttpStatus.UNAUTHORIZED.value(), ex.getMessage()));
-    }
-
-    @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    @ExceptionHandler(WrongCredentialsException.class)
-    public Mono<ErrorResponse> handleWrongCredentials(WrongCredentialsException ex) {
         return Mono.just(new ErrorResponse(HttpStatus.UNAUTHORIZED.value(), ex.getMessage()));
     }
 

@@ -3,6 +3,8 @@ package br.com.contafacil.bonnarotec.gateway.client;
 import br.com.contafacil.shared.bonnarotec.toolslib.domain.client.ClientEntity;
 import br.com.contafacil.shared.bonnarotec.toolslib.domain.user.UserEntity;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Mono;
+
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -18,7 +20,7 @@ public class RegistryServiceFallback implements RegistryServiceClient {
     }
 
     @Override
-    public UserEntity findUserByUsername(String username) {
+    public Mono<UserEntity> findUserByUsername(String username) {
         log.error("Fallback: Error fetching user with username: {}", username);
         return null;
     }
