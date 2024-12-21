@@ -29,5 +29,5 @@ eureka:
     service-url:
       defaultZone: http://discovery-service:8761/eureka
 
-gateway_url: ${API_GATEWAY_URL:http://localhost:8000}
+gateway_url: ${API_GATEWAY_URL:http://localhost:8040}
 frontend_url: ${FRONTEND_URL:http://localhost:3000}
