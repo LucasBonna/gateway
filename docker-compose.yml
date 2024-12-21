@@ -9,7 +9,6 @@ services:
       - "8040:8040"
     volumes:
       - .:/app
-      - ./settings.xml:/root/.m2/settings.xml
     depends_on:
       - db_gateway
     networks:
